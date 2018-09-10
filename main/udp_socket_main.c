@@ -108,66 +108,6 @@ static void initialise_wifi(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-#ifdef CONFIG_EXAMPLE_IPV4
-/* Add a socket, either IPV4-only or IPV6 dual mode, to the IPV4
-   multicast group */
-static int socket_add_ipv4_multicast_group(int sock, bool assign_source_if)
-{
-    struct ip_mreq imreq = {0};
-    struct in_addr iaddr = {0};
-    int err = 0;
-    // Configure source interface
-#if USE_DEFAULT_IF
-    imreq.imr_interface.s_addr = IPADDR_ANY;
-#else
-    tcpip_adapter_ip_info_t ip_info = {0};
-    err = tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(V4TAG, "Failed to get IP address info. Error 0x%x", err);
-        goto err;
-    }
-    inet_addr_from_ipaddr(&iaddr, &ip_info.ip);
-#endif
-    // Configure multicast address to listen to
-    err = inet_aton(MULTICAST_IPV4_ADDR, &imreq.imr_multiaddr.s_addr);
-    if (err != 1)
-    {
-        ESP_LOGE(V4TAG, "Configured IPV4 multicast address '%s' is invalid.", MULTICAST_IPV4_ADDR);
-        goto err;
-    }
-    ESP_LOGI(TAG, "Configured IPV4 Multicast address %s", inet_ntoa(imreq.imr_multiaddr.s_addr));
-    if (!IP_MULTICAST(ntohl(imreq.imr_multiaddr.s_addr)))
-    {
-        ESP_LOGW(V4TAG, "Configured IPV4 multicast address '%s' is not a valid multicast address. This will probably not work.", MULTICAST_IPV4_ADDR);
-    }
-
-    if (assign_source_if)
-    {
-        // Assign the IPv4 multicast source interface, via its IP
-        // (only necessary if this socket is IPV4 only)
-        err = setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &iaddr,
-                         sizeof(struct in_addr));
-        if (err < 0)
-        {
-            ESP_LOGE(V4TAG, "Failed to set IP_MULTICAST_IF. Error %d", errno);
-            goto err;
-        }
-    }
-
-    err = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-                     &imreq, sizeof(struct ip_mreq));
-    if (err < 0)
-    {
-        ESP_LOGE(V4TAG, "Failed to set IP_ADD_MEMBERSHIP. Error %d", errno);
-        goto err;
-    }
-
-err:
-    return err;
-}
-#endif /* CONFIG_EXAMPLE_IPV4 */
-
 #ifdef CONFIG_EXAMPLE_IPV4_ONLY
 static int create_multicast_ipv4_socket()
 {
@@ -214,14 +154,6 @@ static int create_multicast_ipv4_socket()
         goto err;
     }
 #endif
-
-    // this is also a listening socket, so add it to the multicast
-    // group for listening...
-    err = socket_add_ipv4_multicast_group(sock, true);
-    if (err < 0)
-    {
-        goto err;
-    }
 
     // All set, socket is configured for sending and receiving
     return sock;
@@ -340,15 +272,6 @@ static int create_multicast_ipv6_socket()
     if (err < 0)
     {
         ESP_LOGE(V6TAG, "Failed to set IPV6_ADD_MEMBERSHIP. Error %d", errno);
-        goto err;
-    }
-#endif
-
-#if CONFIG_EXAMPLE_IPV4_V6
-    // Add the common IPV4 config options
-    err = socket_add_ipv4_multicast_group(sock, false);
-    if (err < 0)
-    {
         goto err;
     }
 #endif
